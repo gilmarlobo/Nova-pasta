@@ -38,7 +38,7 @@ class Personagem:
     def collides_with(self, other):
         return self.rect.colliderect(other.rect)
 
-class Heroi(Personagem):
+class Candidato(Personagem):
     def __init__(self, x, y):
         animations = {
             "parado": [f"heroiparado{i}" for i in range(1, 11)],
@@ -160,7 +160,7 @@ class Zumbi(Personagem):
         self.rect.y = GROUND_Y
         self.respawn_count = 0
         self.is_attacking = False
-        self.is_permanently_dead = False  # Novo: marca morte definitiva
+        self.is_permanently_dead = False
 
     def move(self, dt, target):
         if not self.is_dying and self.vida > 0 and not self.is_attacking:
@@ -174,7 +174,7 @@ class Zumbi(Personagem):
             self.rect.y = GROUND_Y
 
     def update(self, dt, target):
-        if self.is_permanently_dead:  # Não atualiza se morto definitivamente
+        if self.is_permanently_dead:
             return
 
         if self.is_dying:
@@ -192,7 +192,7 @@ class Zumbi(Personagem):
                     self.frame = 0
                     self.is_attacking = False
                 else:
-                    self.is_permanently_dead = True  # Marca como morto após 3 mortes
+                    self.is_permanently_dead = True
             self.update_animation(dt)
             return
         
@@ -251,34 +251,51 @@ class Zombie_Boss(Personagem):
 
 class Jogo:
     def __init__(self):
-        self.heroi = Heroi(40, GROUND_Y)
-        self.zumbi = Zumbi(640, GROUND_Y)
+        self.state = "menu"
+        self.heroi = None
+        self.zumbi = None
         self.boss = None
         self.background = "bckg"
         self.game_over = False
         self.win = False
+        self.menu_background = "tela_inicial"
+        self.play_button = Actor("play", center=(WIDTH/2, HEIGHT/2))
+        self.restart_button = Actor("restart", center=(WIDTH/2, HEIGHT/2 + 100))
+        self.music_button = Actor("music_on", topright=(WIDTH - 12, 12))
+        self.music_enabled = True
         music.set_volume(0.5)
         music.play("fundo")
 
     def draw(self):
         screen.clear()
-        screen.blit(self.background, (0, 0))
-        self.heroi.draw()
-        if self.zumbi and not self.zumbi.is_permanently_dead:  # Só desenha se não está morto definitivamente
-            self.zumbi.draw()
-        if self.boss and (self.boss.vida > 0 or self.boss.is_dying):
-            self.boss.draw()
-        screen.draw.text(f"Player XP: {int(self.heroi.vida)}", topleft=(10, 10), fontsize=20, color="white")
-        if self.zumbi and self.zumbi.vida > 0:
-            screen.draw.text(f"Zombie XP: {int(self.zumbi.vida)}", topleft=(10, 30), fontsize=20, color="white")
-        if self.boss and self.boss.vida > 0:
-            screen.draw.text(f"Boss XP: {int(self.boss.vida)}", topleft=(10, 30), fontsize=20, color="white")
-        if self.game_over:
-            screen.draw.text("Game Over", center=(WIDTH/2, HEIGHT/2), fontsize=70, color="red")
-        elif self.win:
-            screen.draw.text("You Win!", center=(WIDTH/2, HEIGHT/2), fontsize=70, color="green")
+        if self.state == "menu":
+            screen.blit(self.menu_background, (0, 0))
+            self.play_button.draw()
+            self.music_button.draw()
+        elif self.state == "playing":
+            screen.blit(self.background, (0, 0))
+            self.heroi.draw()
+            if self.zumbi and not self.zumbi.is_permanently_dead:
+                self.zumbi.draw()
+            if self.boss and (self.boss.vida > 0 or self.boss.is_dying):
+                self.boss.draw()
+            screen.draw.text(f"Candidato XP: {int(self.heroi.vida)}", topleft=(10, 10), fontsize=20, color="white")
+            if self.zumbi and self.zumbi.vida > 0:
+                screen.draw.text(f"Zombie XP: {int(self.zumbi.vida)}", topleft=(10, 30), fontsize=20, color="white")
+            if self.boss and self.boss.vida > 0:
+                screen.draw.text(f"Boss XP: {int(self.boss.vida)}", topleft=(10, 30), fontsize=20, color="white")
+            if self.game_over:
+                screen.draw.text("Seu projeto foi reprovado.kkkkk", center=(WIDTH/2, HEIGHT/2 - 50), fontsize=70, color="red")
+                self.restart_button.draw()
+            elif self.win:
+                screen.draw.text("Seu projeto foi aprovado, Parabéns!!", center=(WIDTH/2, HEIGHT/2 - 50), fontsize=70, color="green")
+                self.restart_button.draw()
+            self.music_button.draw()  # Desenha o botão de áudio no jogo
 
     def update(self, dt):
+        if self.state == "menu":
+            return
+        
         if self.game_over or self.win:
             return
         
@@ -291,14 +308,14 @@ class Jogo:
         if self.boss:
             self.boss.update(dt, self.heroi)
         
-        # Spawna o boss quando o zumbi morre 3 vezes
         if self.zumbi and self.zumbi.is_permanently_dead and not self.boss:
             self.boss = Zombie_Boss(640, GROUND_Y)
             self.zumbi = None
-            music.stop()
-            music.play("boss_zombie")
-
-        # Colisão com zumbi
+            if self.music_enabled:
+                music.stop()
+                music.set_volume(0.5)
+                music.play("boss_zombie")
+        
         if self.zumbi and not self.zumbi.is_permanently_dead and self.heroi.collides_with(self.zumbi) and not self.zumbi.is_dying:
             if self.heroi.is_attacking:
                 self.zumbi.take_damage(20 * dt)
@@ -308,7 +325,7 @@ class Jogo:
                     self.zumbi.current_animation = "morrendo"
                     self.zumbi.frame = 0
                     self.zumbi.is_attacking = False
-                    self.heroi.vida = min(self.heroi.vida + 25, 100)  # Bônus fixo por morte
+                    self.heroi.vida = min(self.heroi.vida + 25, 100)
             elif self.heroi.immune_timer <= 0 and not self.heroi.is_dying:
                 if not self.zumbi.is_attacking:
                     self.zumbi.is_attacking = True
@@ -317,7 +334,6 @@ class Jogo:
                     self.zumbi.frame_time = 0
                 self.heroi.take_damage(2)
         
-        # Colisão com boss
         if self.boss and self.heroi.collides_with(self.boss) and not self.boss.is_dying:
             if self.heroi.is_attacking:
                 self.boss.take_damage(20 * dt)
@@ -326,7 +342,7 @@ class Jogo:
                     self.boss.current_animation = "morrendo"
                     self.boss.frame = 0
                     self.boss.is_attacking = False
-                    self.heroi.vida = min(self.heroi.vida + 50, 100)  # Bônus maior por matar o boss
+                    self.heroi.vida = min(self.heroi.vida + 50, 100)
             elif self.heroi.immune_timer <= 0 and not self.heroi.is_dying:
                 if not self.boss.is_attacking:
                     self.boss.is_attacking = True
@@ -338,7 +354,6 @@ class Jogo:
         if self.heroi.is_dying and self.heroi.death_animation_finished:
             self.game_over = True
         
-        # Vitória quando o boss morre
         if self.boss and self.boss.vida <= 0 and self.boss.is_dying and self.boss.frame >= len(self.boss.animations["morrendo"]) - 1:
             self.win = True
 
@@ -349,5 +364,47 @@ def draw():
 
 def update(dt):
     jogo.update(dt)
+
+def on_mouse_down(pos):
+    if jogo.music_button.collidepoint(pos):  # Botão de áudio clicado em qualquer estado
+        jogo.music_enabled = not jogo.music_enabled
+        if jogo.music_enabled:
+            jogo.music_button.image = "music_on"
+            music.set_volume(0.5)
+            if jogo.state == "menu" or not (jogo.game_over or jogo.win):
+                music.stop()
+                music.play("fundo" if not jogo.boss else "boss_zombie")
+        else:
+            jogo.music_button.image = "music_off"
+            music.stop()
+            music.set_volume(0.0)
+    elif jogo.state == "menu" and jogo.play_button.collidepoint(pos):
+        jogo.state = "playing"
+        jogo.heroi = Candidato(40, GROUND_Y)
+        jogo.zumbi = Zumbi(640, GROUND_Y)
+        jogo.boss = None
+        jogo.game_over = False
+        jogo.win = False
+        if not jogo.music_enabled:
+            music.stop()
+            music.set_volume(0.0)
+        else:
+            music.stop()
+            music.set_volume(0.5)
+            music.play("fundo")
+    elif (jogo.game_over or jogo.win) and jogo.restart_button.collidepoint(pos):
+        jogo.state = "menu"
+        jogo.heroi = None
+        jogo.zumbi = None
+        jogo.boss = None
+        jogo.game_over = False
+        jogo.win = False
+        if not jogo.music_enabled:
+            music.stop()
+            music.set_volume(0.0)
+        else:
+            music.stop()
+            music.set_volume(0.5)
+            music.play("fundo")
 
 pgzrun.go()
