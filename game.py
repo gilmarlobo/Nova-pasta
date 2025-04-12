@@ -1,249 +1,189 @@
 import pgzrun
-from pygame import Rect  
+from pygame import Rect
 
 WIDTH = 800
 HEIGHT = 450
+GRAVITY = 900
+JUMP_FORCE = -500
+GROUND_Y = 374
 
-background = "bckg"
-music.set_volume(0.5) 
-music.play("fundo")   
+class Personagem:
+    def __init__(self, x, y, vida, speed, animations, initial_animation):
+        self.actor = Actor(animations[initial_animation][0], topleft=(x, y))
+        self.rect = Rect(x, y, 12, 12)
+        self.vida = vida
+        self.speed = speed
+        self.animations = animations
+        self.current_animation = initial_animation
+        self.frame = 0
+        self.frame_time = 0
+        self.frame_duration = 0.05
 
-# Sprite do heroi
-player_rect = Rect(40, 300, 12, 12)
-player = Actor("heroiparado1", topleft=(40, 300))
-player.width = 12
-player.height = 12
+    def draw(self):
+        self.actor.width = 12
+        self.actor.height = 12
+        self.actor.draw()
 
-player_xp = 100
-vida_fzombie = 100
-fzombi_alive = True
+    def update_animation(self, dt):
+        self.frame_time += dt
+        if self.frame_time >= self.frame_duration:
+            self.frame_time = 0
+            self.frame = (self.frame + 1) % len(self.animations[self.current_animation])
+            self.actor.image = self.animations[self.current_animation][self.frame]
 
-# Sprite zumbi fêmea
-fzombi_rect = Rect(640, 310, 12, 12)
-fzombi = Actor("fzandando1", topleft=(640, 310))
-fzombi.width = 12
-fzombi.height = 12
+    def take_damage(self, amount):
+        self.vida -= amount
+        return self.vida > 0
 
-# Pulo
-is_jumping = False
-jump_velocity = 0
-gravity = 900
-jump_force = -500
-ground_y = 374
+    def collides_with(self, other):
+        return self.rect.colliderect(other.rect)
 
-# Animações
-player_parado = [f"heroiparado{i}" for i in range(1, 11)]
-fzombi_andando = [f"fzandando{i}" for i in range(1, 11)]
-fzombi_morto = [f"fzmorto{i}" for i in range(1, 13)]
-run_frames = [f"heroicorre{i}" for i in range(1, 11)]
-attack_frames = [f"heroiataque{i}" for i in range(1, 11)]
-jump_frames = [f"heroipula{i}" for i in range(1, 11)]
-current_frame = 0
-frame_time = 0
-frame_duration = 0.05
-is_attacking = False
-attack_frame = 0
+class Heroi(Personagem):
+    def __init__(self, x, y):
+        animations = {
+            "parado": [f"heroiparado{i}" for i in range(1, 11)],
+            "correndo": [f"heroicorre{i}" for i in range(1, 11)],
+            "atacando": [f"heroiataque{i}" for i in range(1, 11)],
+            "pulando": [f"heroipula{i}" for i in range(1, 11)]
+        }
+        super().__init__(x, y, vida=100, speed=270, animations=animations, initial_animation="parado")
+        self.is_jumping = False
+        self.jump_velocity = 0
+        self.is_attacking = False
+        self.immune_timer = 0
+        self.immune_duration = 0.5
 
-fzombi_dying = False
-fzombi_respawn_timer = 0
-fzombi_death_frame = 0
-fzombi_death_duration = 1.0
+    def move(self, dt):
+        new_x = self.actor.x
+        is_moving = False
+        if keyboard.K_LEFT:
+            new_x -= self.speed * dt
+            is_moving = True
+        if keyboard.K_RIGHT:
+            new_x += self.speed * dt
+            is_moving = True
+        if not self.is_jumping and keyboard.K_UP:
+            self.is_jumping = True
+            self.jump_velocity = JUMP_FORCE
+        if keyboard.K_SPACE and not self.is_attacking:
+            self.is_attacking = True
+            self.current_animation = "atacando"
+            self.frame = 0
+            self.frame_time = 0  # Reseta o tempo da animação
+            self.immune_timer = self.immune_duration  # Ativa imunidade por 0.5s
+        self.actor.x = max(0, min(new_x, WIDTH - 12))
+        self.rect.x = self.actor.x
+        if not self.is_attacking and not self.is_jumping:
+            self.current_animation = "correndo" if is_moving else "parado"
 
-fzombi_frame = 0
-fzombi_frame_time = 0
-fzombi_frame_duration = 0.05
+    def update(self, dt):
+        if self.is_jumping:
+            self.jump_velocity += GRAVITY * dt
+            self.actor.y += self.jump_velocity * dt
+            if self.actor.y >= GROUND_Y:
+                self.actor.y = GROUND_Y
+                self.is_jumping = False
+                self.jump_velocity = 0
+                self.current_animation = "parado"
+            else:
+                self.current_animation = "pulando"
+        
+        # Atualiza animação
+        self.update_animation(dt)
+        
+        # Controle do ataque
+        if self.is_attacking:
+            # Se a animação de ataque terminou
+            if self.frame >= len(self.animations["atacando"]) - 1:
+                self.is_attacking = False
+                self.current_animation = "parado"
+                self.frame = 0
+                self.frame_time = 0
+        
+        # Controle da imunidade
+        if self.immune_timer > 0:
+            self.immune_timer -= dt
 
-player_speed = 270
-fzombi_speed = 50
+class Zumbi(Personagem):
+    def __init__(self, x, y):
+        animations = {
+            "andando": [f"fzandando{i}" for i in range(1, 11)],
+            "morrendo": [f"fzmorto{i}" for i in range(1, 13)]
+        }
+        super().__init__(x, y, vida=100, speed=50, animations=animations, initial_animation="andando")
+        self.is_dying = False
+        self.respawn_timer = 0
+        self.respawn_duration = 1.0
+        self.current_animation = "andando"
 
-# Imunidade e dano
-is_immune = False
-immune_timer = 0
-immune_duration = 0.5
-damage_cooldown = 0.5
-damage_timer = 0
+    def move(self, dt, target):
+        if not self.is_dying and self.vida > 0:
+            if self.actor.x > target.actor.x:
+                self.actor.x -= self.speed * dt
+            elif self.actor.x < target.actor.x:
+                self.actor.x += self.speed * dt
+            self.actor.x = max(0, min(self.actor.x, WIDTH - 12))
+            self.rect.x = self.actor.x
+
+    def update(self, dt, target):
+        if self.is_dying:
+            self.respawn_timer -= dt
+            if self.respawn_timer <= 0 and self.frame >= len(self.animations["morrendo"]) - 1:
+                self.is_dying = False
+                self.vida = 100
+                self.actor.x = WIDTH - 50
+                self.actor.y = GROUND_Y
+                self.rect.x = self.actor.x
+                self.rect.y = self.actor.y
+                self.current_animation = "andando"
+                self.frame = 0
+        else:
+            self.move(dt, target)
+        self.update_animation(dt)
+
+class Jogo:
+    def __init__(self):
+        self.heroi = Heroi(40, GROUND_Y)
+        self.zumbi = Zumbi(640, GROUND_Y)
+        self.background = "bckg"
+        music.set_volume(0.5)
+        music.play("fundo")
+
+    def draw(self):
+        screen.clear()
+        screen.blit(self.background, (0, 0))
+        self.heroi.draw()
+        if self.zumbi.vida > 0 or self.zumbi.is_dying:
+            self.zumbi.draw()
+        screen.draw.text(f"Player XP: {self.heroi.vida}", topleft=(10, 10), fontsize=20, color="white")
+        if self.zumbi.vida > 0:
+            screen.draw.text(f"Zombie XP: {self.zumbi.vida}", topleft=(10, 30), fontsize=20, color="white")
+
+    def update(self, dt):
+        self.heroi.move(dt)
+        self.heroi.update(dt)
+        self.zumbi.update(dt, self.heroi)
+        
+        # Verifica colisão entre herói e zumbi
+        if self.heroi.collides_with(self.zumbi) and not self.zumbi.is_dying:
+            if self.heroi.is_attacking:
+                # Herói atacando: zumbi toma dano
+                self.zumbi.take_damage(20 * dt)
+                if self.zumbi.vida <= 0:
+                    self.zumbi.is_dying = True
+                    self.zumbi.respawn_timer = self.zumbi.respawn_duration
+                    self.zumbi.current_animation = "morrendo"
+                    self.zumbi.frame = 0
+            elif self.heroi.immune_timer <= 0:
+                # Herói não está atacando nem imune: toma dano
+                self.heroi.take_damage(2)
+
+jogo = Jogo()
 
 def draw():
-    screen.clear()
-    screen.blit(background, (0, 0))
-    # Força tamanho antes de desenhar
-    player.width = 12
-    player.height = 12
-    player.draw()
-    if fzombi_alive or fzombi_dying:
-        fzombi.width = 12
-        fzombi.height = 12
-        fzombi.draw()
-    screen.draw.text(f"Player XP: {player_xp}", topleft=(10, 10), fontsize=20, color="white")
-    if fzombi_alive:
-        screen.draw.text(f"Zombie XP: {vida_fzombie}", topleft=(10, 30), fontsize=20, color="white")
-
-def update_animation(actor, frames, frame_counter, frame_time, frame_duration, dt):
-    frame_time[0] += dt
-    if frame_time[0] >= frame_duration:
-        frame_time[0] = 0
-        frame_counter[0] = (frame_counter[0] + 1) % len(frames)
-        actor.image = frames[frame_counter[0]]
-        actor.width = 12
-        actor.height = 12
-    return frame_counter[0], frame_time[0]
+    jogo.draw()
 
 def update(dt):
-    global current_frame, frame_time, is_attacking, attack_frame
-    global fzombi_frame, fzombi_frame_time, player_xp, vida_fzombie, fzombi_alive
-    global is_immune, immune_timer, damage_timer
-    global is_jumping, jump_velocity
-    global fzombi_dying, fzombi_respawn_timer, fzombi_death_frame
-
-    # Movimento do heroi
-    is_moving = False
-    new_player_x = player.x
-    if keyboard.K_LEFT:
-        new_player_x -= player_speed * dt
-        is_moving = True
-    if keyboard.K_RIGHT:
-        new_player_x += player_speed * dt
-        is_moving = True
-
-    # Controle de pulo
-    if not is_jumping and keyboard.K_UP:
-        is_jumping = True
-        jump_velocity = jump_force
-
-    if is_jumping:
-        jump_velocity += gravity * dt
-        player.y += jump_velocity * dt
-        if player.y >= ground_y:
-            player.y = ground_y
-            is_jumping = False
-            jump_velocity = 0
-            player.image = player_parado[0]  # Volta pro parado ao aterrissar
-            player.width = 12
-            player.height = 12
-
-    # Movimento do zumbi
-    if fzombi_alive:
-        if fzombi.x > player.x:
-            fzombi.x -= fzombi_speed * dt
-        elif fzombi.x < player.x:
-            fzombi.x += fzombi_speed * dt
-        fzombi_rect.x = fzombi.x
-
-    # Atualiza hitbox
-    player_rect.x = new_player_x
-    player_rect.y = player.y
-    if fzombi_alive:
-        fzombi_rect.x = fzombi.x
-        fzombi_rect.y = fzombi.y
-
-    # Checa colisão
-    if fzombi_alive and player_rect.colliderect(fzombi_rect):
-        # Impede avanço
-        if keyboard.K_LEFT and player.x > fzombi.x:
-            player.x = fzombi.x + fzombi.width
-            player_rect.x = player.x
-        elif keyboard.K_RIGHT and player.x < fzombi.x:
-            player.x = fzombi.x - player.width
-            player_rect.x = player.x
-
-        # Dano ao zumbi só no ataque
-        if is_attacking and vida_fzombie > 0:
-            vida_fzombie -= 20 * dt
-            if vida_fzombie <= 0:
-                fzombi_alive = False
-                fzombi_dying = True
-                fzombi_respawn_timer = fzombi_death_duration
-                fzombi_death_frame = 0
-        # Dano ao jogador fora do ataque
-        elif not is_immune:
-            damage_timer -= dt
-            if damage_timer <= 0 and player_xp > 0:
-                player_xp -= 2
-                damage_timer = damage_cooldown
-                player.image = player_parado[0]  # Feedback visual
-    else:
-        player.x = new_player_x
-
-    # Limita à tela
-    player.x = max(0, min(player.x, WIDTH - player.width))
-    player_rect.x = player.x
-    if fzombi_alive:
-        fzombi.x = max(0, min(fzombi.x, WIDTH - fzombi.width))
-        fzombi_rect.x = fzombi.x
-
-    # Controle da imunidade
-    if is_immune:
-        immune_timer -= dt
-        if immune_timer <= 0:
-            is_immune = False
-
-    # Iniciar ataque
-    if keyboard.K_SPACE and not is_attacking:
-        is_attacking = True
-        is_immune = True
-        immune_timer = immune_duration
-        attack_frame = 0
-        frame_time = 0
-
-    # Animações
-    frame_time += dt
-    if frame_time >= frame_duration:
-        frame_time = 0
-
-        # Animação do zumbi
-        if fzombi_alive:
-            fzombi_frame, fzombi_frame_time = update_animation(
-                fzombi, fzombi_andando, [fzombi_frame], [fzombi_frame_time], fzombi_frame_duration, dt
-            )
-        elif fzombi_dying:
-            fzombi_death_frame, fzombi_frame_time = update_animation(
-                fzombi, fzombi_morto, [fzombi_death_frame], [fzombi_frame_time], fzombi_frame_duration, dt
-            )
-            if fzombi_death_frame >= len(fzombi_morto) - 1:
-                fzombi_dying = False
-                fzombi_respawn_timer = fzombi_death_duration
-
-        # Animação do jogador
-        if is_attacking:
-            attack_frame += 1
-            if attack_frame < len(attack_frames):
-                player.image = attack_frames[attack_frame]
-                player.width = 12
-                player.height = 12
-            else:
-                is_attacking = False
-                current_frame = 0
-                animation_frames = run_frames if is_moving else player_parado
-                player.image = animation_frames[current_frame]
-                player.width = 12
-                player.height = 12
-        elif is_jumping:
-            player.image = jump_frames[current_frame % len(jump_frames)]
-            player.width = 12
-            player.height = 12
-            current_frame = (current_frame + 1) % len(jump_frames)
-        else:
-            animation_frames = run_frames if is_moving else player_parado
-            current_frame = (current_frame + 1) % len(animation_frames)
-            player.image = animation_frames[current_frame]
-            player.width = 12
-            player.height = 12
-
-    # Respawn do zumbi
-    if fzombi_dying:
-        fzombi_respawn_timer -= dt
-        if fzombi_respawn_timer <= 0 and fzombi_death_frame >= len(fzombi_morto) - 1:
-            fzombi_alive = True
-            fzombi_dying = False
-            fzombi.x = WIDTH - 50
-            fzombi.y = ground_y
-            fzombi_rect.x = fzombi.x
-            fzombi_rect.y = fzombi.y
-            vida_fzombie = max(vida_fzombie + 20, 100)
-            fzombi_frame = 0
-            fzombi_death_frame = 0
-            fzombi.image = fzombi_andando[0]
-            fzombi.width = 12
-            fzombi.height = 12
+    jogo.update(dt)
 
 pgzrun.go()
