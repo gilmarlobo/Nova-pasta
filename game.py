@@ -1,10 +1,20 @@
+'''     Sei que meu código está com muitas falhas, porém quero reiterar que esse foi o primeiro
+jogo que fiz em python, acabei me perdendo em questões fundamentais e a complexidade do jogo
+acabou se exacerbando, tambem me assustei quando vi que ele ficou tão grande e isso me fez ter que reescrever 
+muitas coisas e acabei simplificando muito do projeto original que tinha em mente. Acabei não seguindo o gênero platformer, 
+até tinha colocado algumas, mas devido a alguns problemas que tive e a falta de tempo, optei por apostar apenas na narrativa
+na esperança que vcs optem por uma avaliação mais pragmática, adorei a experiência e com certeza vou implementar o ensino de python 
+nas salas de aula em que ja trabalho, espero que vcs tenham gostado do jogo e que ele tenha sido divertido de jogar tanto quanto foi 
+divertido desenvolver.
+ '''
+
 import pgzrun
 from pygame import Rect
 
 WIDTH = 800
 HEIGHT = 450
 GRAVITY = 900
-JUMP_FORCE = -450
+JUMP_FORCE = -500
 GROUND_Y = 380
 
 class Personagem:
@@ -60,6 +70,7 @@ class Candidato(Personagem):
         self.rect.y = GROUND_Y
         self.regen_timer = 0
         self.regen_interval = 2.0
+        self.moving_left = False  
 
     def draw(self):
         if not self.is_dying or not self.death_animation_finished:
@@ -72,12 +83,15 @@ class Candidato(Personagem):
             return
         new_x = self.actor.x
         is_moving = False
+        self.moving_left = False 
         if keyboard.K_LEFT:
             new_x -= self.speed * dt
             is_moving = True
+            self.moving_left = True  
         if keyboard.K_RIGHT:
             new_x += self.speed * dt
             is_moving = True
+            self.moving_left = False  
         if not self.is_jumping and keyboard.K_UP:
             self.is_jumping = True
             self.jump_velocity = JUMP_FORCE
@@ -92,6 +106,16 @@ class Candidato(Personagem):
         self.rect.x = self.actor.x
         if not self.is_attacking and not self.is_jumping:
             self.current_animation = "correndo" if is_moving else "parado"
+
+    def update_animation(self, dt):
+        self.frame_time += dt
+        if self.frame_time >= self.frame_duration:
+            self.frame_time = 0
+            if self.current_animation == "correndo" and self.moving_left:
+                self.frame = (self.frame - 1) if self.frame > 0 else len(self.animations["correndo"]) - 1
+            else:
+                self.frame = (self.frame + 1) % len(self.animations[self.current_animation])
+            self.actor.image = self.animations[self.current_animation][self.frame]
 
     def update(self, dt):
         if self.is_dying:
@@ -116,16 +140,17 @@ class Candidato(Personagem):
         if self.is_jumping:
             self.jump_velocity += GRAVITY * dt
             self.actor.y += self.jump_velocity * dt
-            if self.actor.y >= GROUND_Y:
-                self.actor.y = GROUND_Y
-                self.rect.y = GROUND_Y
-                self.is_jumping = False
-                self.jump_velocity = 0
-                self.current_animation = "parado"
-            else:
-                self.current_animation = "pulando"
+            self.rect.y = self.actor.y
+
+        if self.actor.y >= GROUND_Y:
+            self.actor.y = GROUND_Y
+            self.rect.y = GROUND_Y
+            self.is_jumping = False
+            self.jump_velocity = 0
+
+        if self.is_jumping and not self.is_attacking:
+            self.current_animation = "pulando"
         
-        self.rect.y = self.actor.y
         self.update_animation(dt)
         
         if self.is_attacking:
@@ -180,7 +205,7 @@ class Zumbi(Personagem):
         if self.is_dying:
             self.respawn_timer -= dt
             if self.respawn_timer <= 0 and self.frame >= len(self.animations["morrendo"]) - 1:
-                if self.respawn_count < 3:
+                if self.respawn_count < 2:
                     self.is_dying = False
                     self.respawn_count += 1
                     self.vida = 100 + (self.respawn_count * 10)
@@ -290,7 +315,7 @@ class Jogo:
             elif self.win:
                 screen.draw.text("Seu projeto foi aprovado, Parabéns!!", center=(WIDTH/2, HEIGHT/2 - 50), fontsize=70, color="green")
                 self.restart_button.draw()
-            self.music_button.draw()  # Desenha o botão de áudio no jogo
+            self.music_button.draw()  
 
     def update(self, dt):
         if self.state == "menu":
@@ -366,7 +391,7 @@ def update(dt):
     jogo.update(dt)
 
 def on_mouse_down(pos):
-    if jogo.music_button.collidepoint(pos):  # Botão de áudio clicado em qualquer estado
+    if jogo.music_button.collidepoint(pos):  
         jogo.music_enabled = not jogo.music_enabled
         if jogo.music_enabled:
             jogo.music_button.image = "music_on"
@@ -378,6 +403,7 @@ def on_mouse_down(pos):
             jogo.music_button.image = "music_off"
             music.stop()
             music.set_volume(0.0)
+
     elif jogo.state == "menu" and jogo.play_button.collidepoint(pos):
         jogo.state = "playing"
         jogo.heroi = Candidato(40, GROUND_Y)
